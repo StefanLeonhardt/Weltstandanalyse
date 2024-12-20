@@ -1,0 +1,26 @@
+/*-- scss:defaults --*/
+$background-image: url('./IAT.png');
+$toolbar-background-image: url('./IAT.png');
+$navbar-background-image: url('./IAT.png');
+
+/*-- scss:rules --*/
+body {
+  background-image: $background-image;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+#toolbar {
+  background-image: $toolbar-background-image;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+#navbar {
+  background-image: $navbar-background-image;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}

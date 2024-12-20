@@ -1,0 +1,1926 @@
+---
+title: "Dashboard"
+author: "Fachgruppe Judo"
+format: 
+  dashboard:
+    scrolling: true
+    logo: images/icon_judo.png
+    theme:
+      - darkly
+      - meinLayout.scss
+scrolling: true
+server: shiny
+editor: visual
+---
+
+```{r setup, include=FALSE}
+
+### Packete werden geladen
+pacman::p_load(
+  here,
+  rio,
+  readxl,
+  writexl,
+  tidyverse,
+  shiny,
+  ggstatsplot,
+  gridExtra,
+  ggprism,
+  ggrepel,
+  sunburstR,
+  shinyWidgets,
+  plotly,
+  d3r,
+  leaflet,
+  countrycode,
+  plotlyGeoAssets,
+  htmltools,
+  fontawesome,
+  treemap,
+  reactable,
+  reactablefmtr,
+  scales,
+  factoextra)
+
+#dplyr-Nachrichten im Code deaktivieren (Fehlermeldung summarise()
+options(dplyr.summarise.inform = FALSE)
+
+### Daten importieren ####
+here::i_am("Dashboard 2.0.qmd") # Ort dieser Projektdatei bestimmen
+
+world_map <- import(file = here::here("custom.geo.json")) # Kartenmaterial für Globus und Weltkarte
+df <- read_excel(path = here::here("Daten.xlsx"), sheet = "Kampfstatistik")
+df_Wertungspunkte <- read_excel(path = here("Daten.xlsx"), sheet = "Nationenwertung_long")
+df_Nationenliste <- read_excel(path = here("Daten.xlsx"), sheet = "Nationenliste")
+Turnierschluessel <- read_excel(path = here("Daten.xlsx"), sheet = "Turnierschluessel")
+ORL_22_24 <- read_excel(path = here("Daten.xlsx"), sheet = "ORL_21_24")
+
+df_Alter <- read_excel(path = here("Daten.xlsx"), sheet = "Alter")
+
+### Farbdesign des IAT ###
+IATcol <- c("#a0be46", "#158346", "#1f988f","#2bb2e2", "#237db2", "#933a89", "#d05499", "#e23445", "#f29f31", "#878787", "#4a4a4a", "yellow","white", "black")
+
+# df weitere Parameter ####
+# Vorrunde & Hauptrunde
+df <- df %>% 
+  mutate(Turnierabschnitt = case_when(
+  Runde %in% c("Final", "Bronze", "Semi-Final","Repechage", "Quarter-Final") ~ "Hauptrunde",
+  Runde %in% c("Round of 16", "Round of 32", "Round of 64", "Round of 128") ~ "Vorrunde",
+  TRUE ~ Runde
+))
+# Zuweisung Turnierart
+
+df <- df %>% 
+  mutate(Turnierart = case_when(
+  Wettkampf %in% c("EM", "Asian Championships", "Asian Games","African Championships", "Panamerican Games", "Panamerican- Oceania Championships") ~ "Kontinentale Meisterschaften",
+  Wettkampf %in% c("OS") ~"Olympische Spiele",
+  Wettkampf %in% c("WM") ~"Weltmeisterschaften",
+  TRUE ~ Wettkampf
+))
+
+# Zuweisung Disziplin
+df <- df %>% 
+  mutate(Disziplin = case_when(
+  Geschlecht %in% c("w") ~ "Frauen",
+  Geschlecht  %in% c("m") ~ "Männer"
+))
+
+# Zuweisung der Kontinent
+df <- df %>% 
+mutate(Kontinent = case_when(
+  Nation %in% c("ALB", "AND", "ARM", "AUT", "AZE", "BLR", "BEL", "BIH", "BUL", "CRO", "CYP", "CZE", "DEN", "EST", "FRO", "FIN", "FRA", "GEO", "GER", "GBR", "GRE", "HUN", "ISL", "IRT", "AIN", "IRL", "ISR", "ITA", "KOS", "LAT", "LIE", "LTU", "LUX", "MLT", "MON", "MNE", "NED", "MKD", "NOR", "POL", "POR", "MDA", "ROU", "RUS", "SMR", "SRB", "SVK", "SLO", "ESP", "SWE", "SUI", "TUR", "UKR") ~ "Europa",
+  Nation %in% c("AFG", "BRN", "BAN", "BHU", "BRU", "CAM", "TPE", "PRK", "HKG", "IND", "INA", "IRQ", "IRI", "JPN", "JOR", "KAZ", "KUW", "KGZ", "LAO", "LBN", "MAC", "MAS", "MGL", "MYA", "NEP", "PAK", "PLE", "CHN", "PHI", "QAT", "KOR", "KSA", "SGP", "SRI", "SYR", "TJK", "THA", "TLS", "TKM", "UAE", "UZB", "VIE", "YEM") ~ "Asien",
+  Nation %in% c("ALG", "ANG", "BEN", "BOT", "BUR", "BDI", "CMR", "CPV", "CAF", "CHA", "COM", "CGO", "CIV", "COD", "DJI", "EGY", "GEQ", "SWZ", "ETH", "GAB", "GAM", "GHA", "GUI", "GBS", "KEN", "LES", "LBR", "LBA", "MAD", "MAW", "MLI", "MTN", "MRI", "MAR", "MOZ", "NAM", "NIG", "NGR", "REU", "RWA", "STP", "SEN", "SEY", "SLE", "SOM", "RSA", "SSD", "SUD", "TOG", "TUN", "UGA", "TAN", "ZAM", "ZIM") ~ "Afrika",
+  Nation %in% c("ASA", "AUS", "COK", "FIJ", "PYF", "GUM", "KIR", "MHL", "NRU", "NCL", "NZL", "NIU", "NFI", "MNP", "PLW", "PNG", "SAM", "SOL", "TGA", "VAN") ~ "Ozeanien",
+  Nation %in% c("ARG", "ARU", "BAH", "BAR", "BIZ", "BOL", "BRA", "CAN", "CAY", "CHI", "COL", "CRC", "CUB", "CUW", "DOM", "ECU", "ESA", "GLP", "GUA", "GUY", "HAI", "HON", "JAM", "MEX", "NCA", "PAN", "PAR", "PER", "PUR", "LCA", "SXM", "SUR", "TTO", "USA", "URU", "VEN", "ISV") ~ "Panamerika",
+  TRUE ~ NA
+))
+# Familiennamen, die nur einmal vorkommen, identifizieren
+einmalige_namen <- df %>%
+  group_by(Name, Gewichtsklasse, Disziplin, Nation) %>%
+  filter(n() == 1) %>%
+  ungroup()
+
+# Familienname und Vorname verketten
+
+df <- df %>%
+  mutate(Vollname = paste(Name, Vorname))
+
+# Zuweisung des Zykluses
+df <- df %>%
+  mutate(Zyklus = case_when(
+    Datum >= "2012-08-04" & Datum <= "2016-08-07" ~ "2013-2016",
+    Datum >= "2016-08-13" & Datum <= "2021-07-25" ~ "2017-2021",
+    Datum >= "2021-08-01" & Datum <= "2024-07-28" ~ "2022-2024",
+    Datum >= "2024-08-03" & Datum <= "2028-07-27" ~ "2025-2028",
+    TRUE ~ NA_character_
+  ))
+#  Tag der OS & Anzahl Tage bis OS
+
+df <- df %>%
+  mutate(Datum_OS = case_when(
+    Zyklus == "2013-2016" ~ as.Date("2016-08-06"),
+    Zyklus == "2017-2021" ~ as.Date("2021-07-24"),
+    Zyklus == "2022-2024" ~ as.Date("2024-07-27"),
+    TRUE ~ NA_Date_
+  )) %>%
+  mutate(Tage_OS = abs(as.numeric(difftime(Datum, Datum_OS, units = "days"))))
+
+# Nationnanzahl
+
+df_Nationenanzahl <- df %>%
+  select(ID, Event, Disziplin, Nation) %>% 
+  group_by(Event, Disziplin) %>% 
+  summarise(Nationenanzahl = n_distinct(Nation))
+
+# Teilnehmeranzahl
+
+df_Teilnehmeranzahl<- df %>%
+  filter(Wettkampf %in% c("WM", "OS")) %>%
+  select(ID,Nation, Event, Disziplin, Vollname) %>%
+  group_by(Nation, Event, Disziplin) %>%
+  summarise(Teilnehmeranzahl = n_distinct(Vollname))
+
+
+# Anzahl gewonner & verlorener Kämpfe in einem Turnier hinzufügen
+df_Kampfanzahl <- df %>% 
+  select(ID, Sieg_durch) %>% 
+  group_by(ID, Sieg_durch)
+
+df_Kampfanzahl$Sieg_durch <- gsub("Ippon","Win", df_Kampfanzahl$Sieg_durch)
+df_Kampfanzahl$Sieg_durch <-  gsub("Waza-ari-awasete-ippon","Win", df_Kampfanzahl$Sieg_durch)
+df_Kampfanzahl$Sieg_durch <-  gsub("Hansoku-make","Win", df_Kampfanzahl$Sieg_durch)
+df_Kampfanzahl$Sieg_durch <-  gsub("Fusen Gachi","Win", df_Kampfanzahl$Sieg_durch)
+df_Kampfanzahl$Sieg_durch <-  gsub("Kiken Gachi","Win", df_Kampfanzahl$Sieg_durch)
+df_Kampfanzahl$Sieg_durch <-  gsub("Waza-ari", "Win", df_Kampfanzahl$Sieg_durch)
+df_Kampfanzahl$Sieg_durch <-  gsub("Shido", "Win", df_Kampfanzahl$Sieg_durch)
+df_Kampfanzahl$Sieg_durch <-  gsub("Yuko", "Win", df_Kampfanzahl$Sieg_durch)
+
+# Kampfanzahl zählen 
+df_Kampfanzahl <- df_Kampfanzahl %>% 
+  summarise(Kampfanzahl = n())
+# nach Win & Lose aufteilen
+df_Kampfanzahl <- df_Kampfanzahl %>%
+  pivot_wider(names_from = Sieg_durch,
+              values_from = Kampfanzahl)
+# NA für 0 ersetzen
+df_Kampfanzahl <- df_Kampfanzahl %>% 
+  mutate(Win = replace_na(Win, 0), Lose = replace_na(Lose, 0))
+# Summe aus verlorenen und gewonnenen Kämpfen#
+df_Kampfanzahl <- df_Kampfanzahl %>%
+  mutate(Kampfanzahl = Win + Lose)
+# Zusammenführen der beiden Datensätze
+df <- df %>%  left_join(x = df_Kampfanzahl,by = "ID" )
+
+## Platzierungen zuordnen
+df$Platz <- case_when(
+  df$Runde == "Final" & df$Sieg_durch != "Lose" ~ "1",
+  df$Runde == "Final" & df$Sieg_durch == "Lose" ~ "2",
+  df$Runde == "Bronze" & df$Sieg_durch != "Lose" ~ "3",
+  df$Runde == "Bronze" & df$Sieg_durch == "Lose" ~ "5",
+  df$Runde == "Repechage" & df$Sieg_durch == "Lose" ~ "7",
+  df$Runde == "Round of 128" & df$Sieg_durch == "Lose" ~ "Participation",
+  df$Runde == "Round of 64" & df$Sieg_durch == "Lose" & df$Kampfanzahl == 1 ~ "Participation",
+  df$Runde == "Round of 32" & df$Sieg_durch == "Lose" & df$Kampfanzahl == 1 ~ "Participation",
+  df$Runde == "Round of 16" & df$Sieg_durch == "Lose" & df$Kampfanzahl == 1 ~ "Participation",
+  df$Runde == "Repechage" & df$Sieg_durch == "Lose" & df$Lose == 2 ~ "Participation",
+  df$Runde == "Bronze" & df$Sieg_durch == "Lose" & df$Lose == 2 ~ "Participation",
+  df$Runde == "Round of 128" & df$Win == 1 ~ "1 fight won",
+  df$Runde == "Round of 64" & df$Sieg_durch == "Lose" & df$Win == 1 ~ "1 fight won",
+  df$Runde == "Round of 32" & df$Sieg_durch == "Lose" & df$Win >= 1 ~ "1/32",
+  df$Runde == "Round of 16" & df$Sieg_durch == "Lose" & df$Win >= 1 ~ "1/16",
+  TRUE ~ NA_character_
+)
+
+# Punkte zuweisen und neue Spalte hinzufügen
+
+df <- df %>%
+  left_join(Turnierschluessel, by = c("Platz", "Turnierart"))
+
+# df_Wertungspunkte weitere Parameter ####
+# Punktevergabe mittels Turnierschlüssel
+df_Wertungspunkte <- df_Wertungspunkte %>%
+  mutate(Zyklus = case_when(
+    Jahr >= 2012 & Jahr <= 2016 ~ "2013-2016",
+    Jahr >= 2017 & Jahr <= 2021 ~ "2017-2021",
+    Jahr >= 2022 & Jahr <= 2024 ~ "2022-2024",
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(IAT_Wert = rowSums(cbind(Goldmedaille*8, Silbermedaille*6, Bronzemedaille*4.5, Platz_5*2.5, Platz_7*1))) %>%
+  mutate(PotAs_Wert = rowSums(cbind(Goldmedaille*60, Silbermedaille*40, Bronzemedaille*20, Platz_5*8, Platz_7*4))
+  ) %>%
+  mutate(Top_8 =Platz_5 + Platz_7) %>% 
+  mutate(Jahr = as.character(Jahr)) %>% 
+  mutate(Code = countrycode(sourcevar = Nation, origin = "country.name", destination = "iso3c"))
+
+# IJF_Wert
+df_IJF_Wert <- df %>%
+  filter(Wettkampf  %in% c("WM","OS")) %>% 
+  group_by(Event, Disziplin, Nation) %>%
+  summarise(IJF_Wert = sum(Punkte, na.rm = TRUE)) %>%
+  rename(`code` = `Nation`) %>% 
+  left_join(df_Nationenliste, by = c("code"))
+
+# df_Wertungspunkte um IJF_Wert 
+df_Wertungspunkte <- df_Wertungspunkte %>% 
+  left_join(df_IJF_Wert, by = c("Event", "Disziplin", "Nation"))
+
+# df_Weltrangliste ####
+
+df_Weltrangliste <- df %>%
+  select(ID, Event, Vollname, Gewichtsklasse, Nation, Datum, Tage_OS, Zyklus, Punkte) %>%
+  filter(Datum >= Sys.Date() - months(24)) %>%
+  mutate(Wertigkeit = if_else(Datum >= Sys.Date() - months(12), "100%", "50%")) %>%
+  mutate(Punkte_IJF = if_else(Wertigkeit == "50%", Punkte / 2, Punkte)) %>%
+  group_by(Vollname, Nation, Gewichtsklasse, Wertigkeit) %>%
+  arrange(desc(Punkte_IJF)) %>%
+  mutate(Rank = row_number()) %>%
+  filter((Wertigkeit == "100%" & Rank <= 6) | (Wertigkeit == "50%" & Rank <= 6)) %>%
+  summarize(Gesamtpunkte = sum(Punkte_IJF, na.rm = TRUE), .groups = 'drop') %>% 
+  select(Vollname, Nation, Gewichtsklasse, Gesamtpunkte) %>% 
+  group_by(Vollname, Nation, Gewichtsklasse) %>% 
+  summarize(Gesamtpunkte = sum(Gesamtpunkte))
+
+
+# Alter bestimmen
+
+df_Alter$alter <- as.numeric(difftime("2024-07-28", df_Alter$Geburtsdatum, units = "days")) / 365.25
+
+
+# df_Event zur Erstellung eines Maßes  ####
+# Teilnehmerzahl aller Events
+
+df_Event <- df %>%
+  mutate(Turnier = paste(Wettkampf, Ort)) %>% 
+  select(ID, Event, Gewichtsklasse, Disziplin, Vollname , Turnier, Turnierart, Zyklus) %>%
+  group_by(Event, Gewichtsklasse, Disziplin, Turnier, Turnierart, Zyklus) %>%
+  summarise(Teilnehmeranzahl = n_distinct(Vollname))
+
+# IJF-Punkte 
+WRLP <- df %>% 
+  select(ID, Event, Gewichtsklasse, Punkte) %>%
+  group_by(Event, Gewichtsklasse) %>%
+  summarize(Gesamtpunkte = sum(Punkte, na.rm = TRUE))
+
+# Spalte Punkte hinzugefügt
+df_Event <- df_Event %>% 
+  left_join(WRLP, by = c("Event", "Gewichtsklasse")) %>% 
+  mutate(Rel_Punkte = Gesamtpunkte/Teilnehmeranzahl)
+
+
+# df_TeamD für individuelle Entwicklungen während der Qualiphase ####
+
+df_GER <- df %>%
+  select(ID, Vollname, Nation, Disziplin, Gewichtsklasse, Datum, Tage_OS, Punkte) %>%
+  filter(!is.na(Punkte)) %>% 
+  filter(Nation == "GER") %>% 
+  group_by(Vollname) %>%
+  arrange(Datum) %>%
+  mutate(
+    kumulative_punkte = cumsum(Punkte),
+    Turnierversuche = row_number(),
+    KPI = round(kumulative_punkte/Turnierversuche, 1)
+  )
+
+df_Top10 <- df %>%
+  select(ID, Vollname, Nation, Disziplin, Gewichtsklasse, Datum, Tage_OS, Punkte) %>%
+  filter(!is.na(Punkte)) %>% 
+  group_by(Vollname) %>%
+  arrange(Datum) %>%
+  mutate(
+    kumulative_punkte = cumsum(Punkte),
+    Turnierversuche = row_number(),
+    KPI = round(kumulative_punkte/Turnierversuche, 1)
+  ) %>%
+  top_n(10, KPI)
+
+df_TeamD <- bind_rows(df_GER, df_Top10)
+
+
+```
+
+# Startseite
+
+## Row {.sidebar}
+
+Die Weltstandsanalyse für den Deutschen Judo-Bund wurde auf Grundlage der IJF- und EJU-Wettkampfdaten erstellt.
+
+Das bereitgestellte Dashboard bietet relevante Informationen zur Ableitung trainingswissenschaftlicher Inhalte sowie Mehrjahresplanungen im Olympiazyklus.
+
+***Unterstützung für:***
+
+![](images/logo_djb.png){fig-align="left" width="120" height="45"}
+
+***Gefördert durch:***
+
+![](images/BMI_Fz_2021_Office_Farbe_de.png){width="120"}
+
+***Daten-Akquise über:***
+
+![](images/IJF.png){fig-align="left" width="120"}
+
+![](images/EJU.png){fig-align="left" width="120"}
+
+## Row {height="10%"}
+
+```{r valuebox Turnieranzahl}
+#| content: valuebox
+#| title: "Turniere"
+#| width: "33%"
+#| height: "80px"
+list(
+  icon = "globe",
+  color = "#1f988f",
+  size = "20",
+  value = length(unique(df$Event))
+)
+```
+
+## Row {height="10%"}
+
+```{r valuebox Kampfanzahl}
+#| content: valuebox
+#| title: "Kämpfe"
+#| width: "33%"
+#| height: "80px"
+list(
+  icon = "award",
+  color = "#d05499",
+  value = nrow(df[df$Rang == "B",])
+)
+
+```
+
+## Row {height="10%"}
+
+```{r valuebox Judoka}
+#| content: valuebox
+#| title: "Athlet:innen"
+#| width: "33%"
+#| height: "80px"
+list(
+  icon = "people",
+  color = "#237db2",
+  value = length(unique(df$`Name`))
+)
+```
+
+# Entwicklungstendenzen {.storyboard}
+
+## Row {.sidebar width="15%"}
+
+```{r}
+
+  checkboxGroupInput("checkGroup", 
+                     label = "Wähle die Disziplin(en)", 
+                     choices = list("Männer" = "Männer", "Frauen" = "Frauen"),
+                     selected = "Männer"
+    )
+  
+  checkboxGroupInput("checkGroup2", 
+                     label = "Wähle den Olympiazyklus", 
+                     choices = unique(df_Wertungspunkte$Zyklus),
+                     selected = "2022-2024"
+    )
+  
+    selectInput(inputId = "select0",
+              label = "Wähle ein Event",
+              choices = unique(df_Wertungspunkte$Event),
+              selected = "",
+              multiple = TRUE)
+```
+
+## Row {orientation="columns" scrolling="true" width="60%"}
+
+::: panel-tabset
+## Nationenwertung
+
+::: {.card title="Nationenwertung der TOP 10 Nationen"}
+```{r}
+# Grafik ausgeben
+plotlyOutput('plot')
+
+```
+
+```{r}
+#| context: server
+
+  # Daten erstellen zur Verknüpfung von Slider und Grafik 
+  data <- reactive({
+  df_Wertungspunkte
+  })
+
+    # Filtern Sie die Daten basierend auf der ausgewählten Disziplin und dem Zyklus
+filteredData <- reactive({
+  if (is.null(input$select0) || length(input$select0) == 0) {
+    return(data()[data()$Disziplin %in% input$checkGroup & 
+                   data()$Zyklus %in% input$checkGroup2, ])
+  } else {
+    return(data()[data()$Disziplin %in% input$checkGroup & 
+                   data()$Zyklus %in% input$checkGroup2 &
+                   data()$Event %in% input$select0, ])
+  }
+})
+
+  # Berechnen Sie die Top 10 Nationen basierend auf dem Durchschnittswert
+  topNations <- reactive({
+    filteredData() %>%
+      group_by(Nation) %>%
+      summarise(IJF_Wert = mean(IJF_Wert, na.rm = TRUE)) %>%
+      top_n(10, IJF_Wert) %>%
+      pull(Nation)
+  })
+  
+p <- reactive({
+  filteredData() %>% 
+  filter(Nation %in% topNations()) %>%  # Filtern Sie die Daten auf die Top 10 Nationen
+  mutate(Nation = forcats::fct_reorder(Nation, IJF_Wert, .fun = median)) %>%  # Verwenden Sie die fct_reorder Funktion, um die Nationen zu ordnen
+    ggplot(aes(x = Nation, y = IJF_Wert)) +
+    geom_boxplot(alpha = 0.5) +   
+    geom_jitter(width = 0.1, alpha = 0.4, size = 1, show.legend = FALSE) +
+    stat_summary(fun = mean,
+                 geom = "point",
+                 colour = "black",
+                 shape = 22,
+                 size = 1.5,) +   
+    scale_x_discrete(limits = rev(levels(topNations()))) +   # Setzen Sie die Grenzen der x-Achse auf die Top 10 Nationen
+      coord_flip() +
+      labs(x = "",
+           y = "IJF-Platzierungspunkte [a.u.]") +
+      theme_classic()
+})  
+  
+  # Grafik erstellen
+output$plot <- renderPlotly({
+    ggplotly(p())
+})
+```
+
+*Die Nationenwertung bezieht sich auf die Jahreshöhepunkte (Weltmeisterschaften und Olympischen Spiele) seit 2012.*
+
+*Die Wertungspunkte einer Nation werden anhand der erzielten Platzierung (TOP 8) bei einem Turnier ermittelt. In dieser Analyse werden zur Bewertungen IJF-Weltranglistenpunkte, PotAs-Punkte oder HOSI-Punkte verwendet*
+
+-   Japan ist die erfolgreichste Nation im Männer- und Frauenbereich. Das beste Mannschaftsergebnis wurde für die Männer 2021 mit 11.792 Punkten und für die Frauen 2018 mit 15.200 Punkten erreicht. Durchschnittlich erzielt Japan 9.454 Punkte bei einem Jahreshöhepunkt.
+
+-   Deutschland erzielte bei den Männern 2015 mit 5.200 Punkte und bei den Frauen 2013 mit 4.440 Punkte das bisher beste Mannschaftsergebnis.
+
+-   Zu den weiteren Spitzennationen zählen anhand der statistischen Kennzahlen Frankreich, Georgien, Russland, Südkorea, Mongolei und Aserbaidschan.
+:::
+
+::: {.card title="Historische Betrachtung und Entwicklung der Nationenwertung"}
+```{r}
+# Grafik ausgeben
+plotlyOutput('plot1')
+```
+
+```{r}
+#| context: server
+
+  # Daten erstellen zur Verknüpfung von Slider und Grafik 
+  data1 <- reactive({
+  df_Wertungspunkte %>%
+    group_by(Jahr, Rang, Nation, Code, Zyklus, Disziplin, Event) %>%
+    summarise(NWP = mean(IJF_Wert)) %>% 
+    mutate(hover = paste0(Nation, ": ",NWP, " NWP", " - ", "Rang: ",  Rang))
+  })
+
+  # Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData1 <- reactive({
+  if (is.null(input$select0) || length(input$select0) == 0) {
+    return(data1()[data1()$Disziplin %in% input$checkGroup & 
+                   data1()$Zyklus %in% input$checkGroup2, ])
+  } else {
+    return(data1()[data1()$Disziplin %in% input$checkGroup & 
+                   data1()$Zyklus %in% input$checkGroup2 &
+                   data1()$Event %in% input$select0, ])
+  }
+})
+
+# map projection/options
+
+p1 <- reactive({
+  filteredData1() %>% 
+    plot_geo(offline = TRUE, frame = ~Jahr) %>% 
+  add_trace(
+    locations = ~Code, #Nationencode
+    z = ~NWP,
+    zmin = 0,
+    zmax = max(filteredData1()$NWP),
+    color = ~NWP, 
+    colorscale = "plasma",
+    text = ~hover,
+    hoverinfo = "text") %>% 
+  layout(geo = list(scope = 'world',
+               showland = TRUE,
+               landcolor = toRGB("#158346"),
+               showocean = TRUE,
+               oceancolor = toRGB("LightBlue"),
+               showframe = TRUE,
+               showcoastlines = TRUE,
+               projection = list(type = 'equirectangular'))
+         )
+
+})  
+  
+  # Grafik erstellen
+output$plot1 <- renderPlotly(p1())
+```
+
+*In den meisten Ergebnisstatistiken werden neben den Nationenwertungspunkten vor allem die Ränge im Medaillienspiegel zur Bewertung des Gesamterfolges einer Nation verwendet. Die historische Betrachtung zeigt, dass sich der Erfolg einer Nation zwischen diesen Parametern unterscheiden kann.*
+:::
+
+::: {.card title="Medaillen und Platzierungspunkte"}
+```{r}
+# Tabelle 
+  reactableOutput("table1")
+    div(style = "display: flex; align-items: center;",
+      uiOutput("downloadButton"))
+```
+
+```{r}
+#| context: server
+
+# Datenvorbereitung
+data1_1 <- reactive({
+  df_Wertungspunkte
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+# Filtern basierend auf der ausgewählten Disziplin und dem Zyklus
+
+filteredData1_1 <- reactive({
+  if (is.null(input$select0) || length(input$select0) == 0) {
+    data <- data1_1()[data1_1()$Disziplin %in% input$checkGroup & 
+                     data1_1()$Zyklus %in% input$checkGroup2, ]
+  } else {
+    data <- data1_1()[data1_1()$Disziplin %in% input$checkGroup & 
+                     data1_1()$Zyklus %in% input$checkGroup2 &
+                     data1_1()$Event %in% input$select0, ]
+  }
+  
+  data %>%
+    select(Nation, Event, Goldmedaille, Silbermedaille, Bronzemedaille, Top_8, PotAs_Wert, IJF_Wert, IAT_Wert) %>% 
+    group_by(Nation, Event, PotAs_Wert, IJF_Wert, IAT_Wert) %>% 
+    summarize(
+      Goldmedaille = sum(Goldmedaille, na.rm = TRUE),
+      Silbermedaille = sum(Silbermedaille, na.rm = TRUE),
+      Bronzemedaille = sum(Bronzemedaille, na.rm = TRUE),
+      Top_8 = sum(Top_8, na.rm = TRUE)
+    ) %>% 
+    mutate(G_S_B = paste(Goldmedaille, Silbermedaille, Bronzemedaille, sep = "-"))
+})
+
+
+# Tabelle erstellen
+output$table1 <- renderReactable({
+  data <- filteredData1_1() %>% 
+            select(Nation, Event, G_S_B, Top_8, PotAs_Wert, IJF_Wert, IAT_Wert)
+
+  reactable(data,
+            filterable = TRUE,
+            defaultPageSize = 10,
+            minRows = 10,
+            defaultColDef = colDef(
+              cell = data_bars(data %>% select(-Top_8), 
+                               box_shadow = TRUE, 
+                               round_edges = TRUE,
+                               text_position = "outside-base",
+                               fill_color = c("#d05499", "#2bb2e2"),
+                               background = "#e5e5e5",
+                               fill_gradient = TRUE,
+                               text_color = "white")),
+            columns = list(
+              Nation = colDef(name = "Nation", footer = "Total"),
+              Event = colDef(name = "Event"),
+              G_S_B = colDef(name = "G S B",
+                             footer = function(values) {
+    
+sum_values <- sum(as.numeric(unlist(strsplit(values, "-"))))
+                sprintf("%d", sum_values)
+              }),
+              Top_8 = colDef(name = "Platz 5&7", cell = function(value) {
+                value  # Keine data_bars für Top_8, nur die Zahl anzeigen
+              }, footer = function(values) {
+                sprintf("%d", sum(values, na.rm = TRUE))
+              }),
+              PotAs_Wert = colDef(name = "PotAs Punkte", footer = function(values) {
+                sprintf("%.2f", sum(values, na.rm = TRUE))
+              }),
+              IJF_Wert = colDef(name = "IJF Punkte", footer = function(values) {
+                sprintf("%.2f", sum(values, na.rm = TRUE))
+              }),
+              IAT_Wert = colDef(name = "HOSI Punkte", footer = function(values) {
+                sprintf("%.2f", sum(values, na.rm = TRUE))
+              })
+            ),
+            theme = reactableTheme(
+              color = "#ffffff",  # Schriftfarbe
+              backgroundColor = "#333333",  # Hintergrundfarbe
+              borderColor = "#555555",  # Rahmenfarbe
+              stripedColor = "#444444",  # Hintergrundfarbe Zeilen
+              highlightColor = "#555555",  # Hintergrundfarbe Zeilen
+              inputStyle = list(
+              color = "#000000",  # Textfarbe der Filterfelder
+              backgroundColor = "#ffffff")  # Hintergrundfarbe der Filterfelder
+            ))
+})
+
+# Download-Button hinzufügen
+output$downloadButton <- renderUI({
+  htmltools::browsable(
+    tagList(
+      tags$button(
+        tagList(fontawesome::fa("download"), "Download as CSV"),
+        style = "color: #2bb2e2; background-color: #d3d3d3; border: none; padding: 10px 20px; cursor: pointer; margin-bottom: 10px; border-radius: 8px; text-align: left;",
+        onclick = "Reactable.downloadDataCSV('table1', 'data.csv')"
+      )
+    )
+  )
+})
+```
+
+*Die Anzahl der Nationen mit Medaillengewinn kann ein Indiz für die Diversität und Leistungsdichte bei Jahreshöhepunkten sein. Dadurch verändert sich auch für die einzelnen Disziplinen das Verhältnis zu den 28 möglichen Podiumsplätzen, die als relative Nationenbreite definiert ist.*
+:::
+
+## Nationenbreite
+
+::: {.card title="Anzahl der teilnehmenden Nationen"}
+```{r}
+# Grafik ausgeben
+plotlyOutput('plot2')
+```
+
+```{r}
+#| context: server
+
+# Datenvorbereitung
+data2 <- reactive({
+  df %>% 
+  select(Event, Disziplin, Nation, Zyklus, Kontinent, Turnierart) %>%   group_by(Event,Disziplin,Turnierart, Zyklus, Kontinent) %>% 
+  summarise(Nationen = n_distinct(Nation))
+})
+
+  # Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+  filteredData2 <- reactive({
+    # Filtern Sie die Daten basierend auf der ausgewählten Disziplin und dem Zyklus
+    data2()[data2()$Disziplin %in% input$checkGroup & 
+            data2()$Zyklus %in% input$checkGroup2, ]
+  })
+
+
+p2 <- reactive({
+  filteredData2() %>%
+ggplot(aes(x = Kontinent, y = as.numeric(Nationen), fill = Turnierart, na.rm = TRUE)) +
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+  labs(y = "Anzahl der Nationen [n]") +
+  scale_y_continuous(breaks = seq(from = 0, to = 50, by = 10),
+                     minor_breaks = seq(0, 50, 5),
+                     guide = guide_prism_minor()) +
+  theme_classic(base_size = 12) +
+  scale_fill_manual(values = IATcol)
+})
+
+# Grafik erstellen
+output$plot2 <- renderPlotly({
+    ggplotly(p2()) %>% layout(boxmode = "group")
+})
+  
+  
+```
+
+*Die Nationenbreite beschreibt die Anzahl der teilnehmenden Nationen bei einem Turnier.*
+
+*Kontinentalverband Afrika (AJU), Kontinentalverband Europa (EJU), Kontinentalverband Asien (JUA), Kontinentalverband Ozeanien (OJU) und Kontinentalverband Panamerika (PJC)*
+
+-   Die Darstellung der Nationenbreite ist für die Qualifikationsrichtlinien der Olympischen Spiele interessant. Da sich die Nationenanzahl über die Kontinente bei allen Turnieren gleich darstellt, ist dies ein Indiz für ein ausgeglichenes Qualifikationssystem.
+:::
+
+::: {.card title="Anzahl der Nationen mit Medaillen"}
+```{r}
+# Tabelle 
+reactableOutput("table2")
+div(style = "display: flex; align-items: center;",
+      uiOutput("downloadButton2"))
+```
+
+```{r}
+#| context: server
+
+# Datenvorbereitung
+data3 <- reactive({
+
+  df %>%
+    filter(Wettkampf %in% c("WM", "OS"), Platz %in% c(1, 2, 3)) %>%
+    select(ID, Event, Disziplin, Nation, Turnierart, Zyklus) %>%
+    group_by(Event, Disziplin, Turnierart, Zyklus) %>%
+    summarise(Erfolgreiche_Nationen = n_distinct(Nation)) %>%
+    mutate(Nationenbreite = round(Erfolgreiche_Nationen / 28, 2)) %>%
+    left_join(df_Nationenanzahl, by = c("Event", "Disziplin")) %>%
+    mutate(Erfolgsbreite = round(Erfolgreiche_Nationen/Nationenanzahl, 2)) %>%
+    rename(`Erfolgreiche Nationen` = `Erfolgreiche_Nationen`)
+  
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+# Filtern basierend auf der ausgewählten Disziplin und dem Zyklus
+filteredData3 <- reactive({
+  data3()[data3()$Disziplin %in% input$checkGroup &
+          data3()$Zyklus %in% input$checkGroup2, ]
+})
+
+# Tabelle erstellen
+  output$table2 <- renderReactable({
+    reactable(filteredData3(),
+              filterable = TRUE,
+              defaultPageSize = 10,
+              minRows = 10,
+              defaultColDef = colDef(
+                cell = data_bars(filteredData3(), 
+                                 box_shadow = TRUE, 
+                                 round_edges = TRUE,
+                                 text_position = "outside-base",
+                                 fill_color = c("#d05499", "#2bb2e2"),
+                                 background = "#e5e5e5",
+                                 fill_gradient = TRUE,
+                                 text_color = "white")),
+              theme = reactableTheme(
+              color = "#ffffff",  # Schriftfarbe
+              backgroundColor = "#333333",  # Hintergrundfarbe
+              borderColor = "#555555",  # Rahmenfarbe
+              stripedColor = "#444444",  # Hintergrundfarbe Zeilen
+              highlightColor = "#555555",  # Hintergrundfarbe Zeilen
+              inputStyle = list(
+              color = "#000000",  # Textfarbe Filter
+              backgroundColor = "#ffffff")  # Hintergrundfarbe Filter
+            ))
+  })
+  
+# Download-Button hinzufügen
+output$downloadButton2 <- renderUI({
+  htmltools::browsable(
+    tagList(
+      tags$button(
+        tagList(fontawesome::fa("download"), "Download as CSV"),
+        style = "color: #2bb2e2; background-color: #d3d3d3; border: none; padding: 10px 20px; cursor: pointer; margin-bottom: 10px; border-radius: 8px; text-align: left;",
+        onclick = "Reactable.downloadDataCSV('table2', 'data.csv')"
+      )
+    )
+  )
+})
+```
+
+*Die Anzahl der Nationen mit Medaillengewinn kann ein Indiz für die Diversität und Leistungsdichte bei Jahreshöhepunkten sein. Dadurch verändert sich auch für die einzelnen Disziplinen das Verhältnis zu den 28 möglichen Podiumsplätzen, die als relative Nationenbreite definiert ist.*
+:::
+
+## Teilnehmeranzahl
+
+::: {.card title="Anzahl der teilnehmenden Judoka bei Jahreshöhepunkten"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot3")
+```
+
+```{r}
+#| context: server
+
+#Datenvorbereitung
+data4 <- reactive({
+df %>%
+  filter(Wettkampf %in% c("WM", "OS")) %>%
+  select(ID, Event, Turnierart ,Disziplin, Vollname , Datum, Zyklus) %>%
+  group_by(Event, Turnierart, Disziplin, Datum, Zyklus) %>%
+  summarise(Teilnehmeranzahl = n_distinct(Vollname))
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+#Filtern basierend auf der ausgewählten Disziplin und dem Zyklus
+filteredData4 <- reactive({
+    data4()[data4()$Disziplin %in% input$checkGroup & 
+            data4()$Zyklus %in% input$checkGroup2,]
+  })
+
+output$plot3 <- renderPlotly({
+  
+p3 <- filteredData4() %>%
+  ggplot(aes(x = Datum, y = Teilnehmeranzahl, colour = Disziplin, fill = Turnierart, label = Event)) +
+  geom_smooth(alpha = 0.2, se = FALSE, linetype = 2)  + # gestrichelte Linie
+  geom_point(data = filteredData4() %>% filter(Turnierart == "WM"), shape = 21) + # Kreis
+  geom_point(data = filteredData4() %>% filter(Turnierart == "Olympische Spiele"), shape = 22) +  # Vierecke
+  geom_label(vjust = -0.5) +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = IATcol)
+
+ggplotly(p3)
+
+})
+
+```
+
+*Die Teilnehmeranzahl bei Jahreshöhepunkten kann im Verlauf eines Olympiazykluses variieren.*
+:::
+
+::: {.card title="Anzahl der teilnehmenden Judoka pro Gewichtsklasse"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot4")
+
+```
+
+```{r}
+#| context: server
+
+#Datenvorbereitung
+data4_1 <- reactive({
+df %>%
+  filter(Wettkampf %in% c("WM", "OS")) %>%
+  select(ID, Event, Gewichtsklasse, Disziplin, Vollname , Datum, Zyklus) %>%
+  group_by(Event, Gewichtsklasse, Disziplin, Datum, Zyklus) %>%
+  summarise(Teilnehmeranzahl = n_distinct(Vollname))
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+#Filtern basierend auf der ausgewählten Disziplin und dem Zyklus
+filteredData4_1 <- reactive({
+    data4_1()[data4_1()$Disziplin %in% input$checkGroup & 
+            data4_1()$Zyklus %in% input$checkGroup2,]
+  })
+
+output$plot4 <- renderPlotly({
+  
+p <- filteredData4_1() %>%
+  ggplot(aes(x = Datum, y = Teilnehmeranzahl, colour = Gewichtsklasse, label = Event)) +
+  geom_smooth(alpha = 0.2, se = FALSE) +
+  geom_point() +
+  geom_label(vjust = -0.5) +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "top") +
+  scale_colour_manual(values = IATcol)
+
+ggplotly(p)
+
+})
+```
+
+*Für jedes Turnier ist die Anzahl der teilnehmenden Judoka nach den Gewichtsklassen und verschiedenen Turnierarten seit 2016 sortiert.*
+
+-   Turnierübergreifend nehmen die meisten Judoka in den mittleren Gewichtsklassen teil. Im Vergleich zum Männerbereich ist allerdings das Teilnehmerinnenfeld insgesamt gleichverteilter.
+
+-   Die schwerste Gewichtsklasse weist im Vergleich zu den anderen Gewichtsklassen ein homogenes Starterfeld auf.
+
+-   Innerhalb der Gewichtsklassen wird nochmal deutlich, dass die kontinentalen Verbandsmeisterschaften die meisten teilnehmenden Judoka haben.
+
+-   Gewichtsklassenübergreifend sind im Frauenbereich weniger Teilnehmerinnen als im Männerbereich (\~70%).
+
+-   Das Bild eines großen Starterfeldes bei kontinentalen Verbandsmeisterschaften (Continental) wird auch im Frauenbereich bestätigt.
+:::
+
+::: {.card title="Anzahl der teilnehmenden Judoka pro Gewichtsklasse"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot5")
+
+```
+
+```{r}
+#| context: server
+
+#Datenvorbereitung
+data5 <- reactive({
+  df %>%
+    select(ID, Event, Gewichtsklasse, Turnierart, Disziplin, Vollname, Zyklus) %>%
+    group_by(Event, Gewichtsklasse, Turnierart, Disziplin, Zyklus) %>%
+    summarize(Teilnehmeranzahl = n_distinct(Vollname))
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData5 <- reactive({
+  data5()[data5()$Disziplin %in% input$checkGroup & 
+          data5()$Zyklus %in% input$checkGroup2,]
+})
+
+p5 <- reactive({
+p <- filteredData5() %>%
+    ggplot(aes(x = Gewichtsklasse, y = Teilnehmeranzahl, fill = Gewichtsklasse), na.rm = TRUE) +
+    geom_boxplot(alpha = 0.6) +
+    theme_classic(base_size = 12) +
+    scale_fill_manual(values = IATcol)
+
+p <- p + facet_wrap(vars(Disziplin), scales = "free")
+
+print(p)  
+})
+
+output$plot5 <- renderPlotly({
+
+  ggplotly(p5())
+})
+
+```
+:::
+:::
+
+# Wettkampfstruktur
+
+## Row {.sidebar width="15%"}
+
+```{r}
+  checkboxGroupInput("checkGroup3", 
+                     label = "Wähle die Disziplin(en)", 
+                     choices = list("Männer" = "Männer", "Frauen" = "Frauen"),
+                     selected = "Männer"
+    )
+  checkboxGroupInput("checkGroup4", 
+                     label = "Wähle den Olympiazyklus", 
+                     choices = unique(df$Zyklus),
+                     selected = "2022-2024"
+    )
+  selectInput(inputId = "select1",
+              label = "Wähle ein Event",
+              choices = unique(df$Event),
+              selected = "",
+              multiple = TRUE)
+```
+
+## Row {orientation="columns" scrolling="true" width="60%"}
+
+::: panel-tabset
+## Wertungen
+
+::: {.card title="Prozentuale Verteilung der Kampfentscheidungen"}
+```{r fig.width=8, fig.height=8}
+# Grafik ausgeben
+plotlyOutput("plot6")
+```
+
+```{r}
+#| context: server
+
+# Datenvorbereitung
+data6 <- reactive({
+  df %>% 
+    filter(!(Sieg_durch %in% c("Lose", "Yuko", "Shido"))) 
+    #group_by(Sieg_durch, Disziplin, Zyklus, Event) %>%
+    #summarise(count = n())
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData6 <- reactive({
+  if (is.null(input$select1) || length(input$select1) == 0) {
+    return(data6()[data6()$Disziplin %in% input$checkGroup3 & 
+                   data6()$Zyklus %in% input$checkGroup4, ])
+  } else {
+    return(data6()[data6()$Disziplin %in% input$checkGroup3 & 
+                   data6()$Zyklus %in% input$checkGroup4 &
+                   data6()$Event %in% input$select1, ])
+  }
+})
+
+output$plot6 <- renderPlotly({
+  p <- filteredData6() %>%
+    ggplot(aes(x = Event, fill = Sieg_durch)) +
+    geom_bar(position = "fill") +  # geom_col durch geom_bar ersetzt
+    scale_fill_manual(values = IATcol) +
+    coord_flip() +
+    theme_classic() +
+    scale_y_continuous(labels = percent_format()) +
+    labs(x = "Event",
+         y = "Anteil [%]")
+  
+  ggplotly(p) #%>% 
+    #layout(width = 800, height = 1200)
+})
+```
+
+*Die Kampfentscheidung wird durch verschiedene Siegarten beschrieben. Hierzu zählen Ippon (erzielt durch Technik), Waza-ari, Waza-ari-awasete-ippon, Hansoku-make, Fusen Gachi und Kiken Gachi.*
+
+-   Zwischen dem Männer- und Frauenbereich sind keine Unterschiede bei den Kampfentscheidungen zu beobachten.
+
+-   Rund 83% der Kampfentscheidungen werden durch technische Wertungen erzielt. Hiervon sind wiederum 43% durch Ippon entschieden worden.
+
+-   Durchschnittlich werden bei den Wettkämpfen lediglich 15% der Kampfentscheidungen durch Hansoku-make entschieden.
+:::
+
+## Strafen
+
+::: {.card title="Durschnittliche Anzahl an Strafen"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot7")
+```
+
+```{r}
+#| context: server
+
+# Datenvorbereitung
+data7 <- reactive({
+df  %>%
+    filter(Shido > 0) %>%
+    group_by(Datum, Gewichtsklasse, Disziplin, Zyklus,Event) %>% 
+    summarise(SpK = mean(Shido)) 
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+#Filtern basierend auf der ausgewählten Disziplin und dem Zyklus
+filteredData7 <- reactive({
+  if (is.null(input$select1) || length(input$select1) == 0) {
+    return(data7() %>% 
+             filter(Disziplin %in% input$checkGroup3 & 
+                    Zyklus %in% input$checkGroup4))
+  } else {
+    return(data7() %>% 
+             filter(Disziplin %in% input$checkGroup3 & 
+                    Zyklus %in% input$checkGroup4 & 
+                    Event %in% input$select1))
+  }
+})
+
+
+output$plot7 <- renderPlotly({
+  
+p <- 
+  filteredData7() %>%
+  ggplot(aes(x = Datum, y = SpK, colour = Gewichtsklasse)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(alpha = 0.1) +
+  scale_y_continuous(breaks = seq(from = 0, to = 3, by = 0.25)) +
+  theme_classic(base_size = 16) +
+  labs(titel = "Männer",
+       x = "",
+       y = "Ø Shido pro Judoka") +
+  scale_color_manual(values = IATcol)
+  
+ggplotly(p)
+
+})
+```
+
+*Die durschnittlichen Shido pro Judoka geben Auskunft über die relative Bestrafungshäufikeit eines Turniers. Der Parameter wird berechnet mit Hilfe der Summe der vergebenen Shido durch die Gesamtanzahl der Judoka in den entsprechenden Kampfpaarungen. Der Datenbestand berücksichtigt alle Jahreshöhepunkte seit 2018 (EM, Masters, WM & OS).*
+
+-   Bei der Europameisterschaft 2023 wurden im Vergleich zu den anderen Wettbewerben die meisten Shido vergeben.
+
+-   Die Gewichtsklassen mit der höchsten **relativen Bestrafungshäufigkeit** sind aktuell im Männerbereich -66kg und +100kg
+
+-   Auffälig ist die verhältmäßig geringe relative Bestrafungshäuigkeit bei den Olympischen Spielen 2021.
+
+-   Bei der Europameisterschaft 2023 wurden im Vergleich zu den vergangenen Turnieren die meisten Shido vergeben.
+
+-   Die Gewichtsklassen mit der höchsten **relativen Bestrafungshäufigkeit** sind aktuell im Frauenbereich -52kg und -70kg.
+
+-   Auffälig ist die verhältmäßig geringe relative Bestrafungshäuigkeit bei den Olympischen Spielen 2021.
+:::
+
+## Produktivität
+
+::: {.card title="Produktivität als Orientierung für die Qualität der Angriffe"}
+```{r}
+
+# Grafik ausgeben
+plotlyOutput("plot8")
+```
+
+```{r}
+#| context: server
+
+# Datenvorbereitung
+data8 <- reactive({
+df %>%
+    filter(WQ <= 15, WQ >= -15)
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+# Filtern basierend auf der ausgewählten Disziplin und dem Zyklus
+
+filteredData8 <- reactive({
+  if (is.null(input$select1) || length(input$select1) == 0) {
+    return(data8()[data8()$Disziplin %in% input$checkGroup3 & 
+                   data8()$Zyklus %in% input$checkGroup4, ])
+  } else {
+    return(data8()[data8()$Disziplin %in% input$checkGroup3 & 
+                   data8()$Zyklus %in% input$checkGroup4 &
+                   data8()$Event %in% input$select1, ])
+  }
+})
+
+output$plot8 <- renderPlotly({
+
+p <- 
+  filteredData8() %>%
+  ggplot(aes(x = Gewichtsklasse, y = WQ, fill = Gewichtsklasse)) +
+  geom_boxplot(position=position_dodge(1),
+               width = 0.2,
+               alpha = 0.4) +
+  stat_summary(fun = mean,
+               geom = "point",
+               colour = "black",
+               shape = 22,
+               size = 3,
+               alpha = 0.6) +
+  stat_summary(data = filteredData8() %>% filter(Platz == 1),
+               mapping = aes(x = Gewichtsklasse, y = WQ),
+               fun = "mean",
+               geom = "point",
+               colour = "#FFD700",
+               shape = 21,
+               size = 3) +
+  stat_summary(data = filteredData8() %>% filter(Platz <= 8),
+               mapping = aes(x = Gewichtsklasse, y = WQ),
+               fun = "mean",
+              geom = "point",
+               colour = "blue",
+               shape = 23,
+               size = 3) +
+  stat_summary(data = filteredData8() %>% filter(Nation == "GER"),
+               mapping = aes(x = Gewichtsklasse, y = WQ),
+               fun = "mean",
+               geom = "point",
+               colour = "red",
+               shape = 24,
+               size = 3) +
+  scale_y_continuous(breaks = seq(from = -15, to = 15, by = 2)) +
+  theme_classic(base_size = 12) +
+ labs(x = "Gewichtsklassen",
+      y = "Produktivität [WP/Min]") +
+ theme(axis.title.y = element_text(size = 14, colour = 'black')) +
+       scale_fill_manual(values = IATcol)
+  
+
+ggplotly(p)
+
+})
+
+```
+
+*Unter der Produktivität wird das Vermögen eines Judoka verstanden, unter der Anwendung von Griff- und Wurftechniken eine höchstmögliche Punktwertung zu erzielen. Quantifiziert wird die Produktivität aus dem Verhältnis zwischen der Summe aus den erzielten Wertungspunkten sowie erhaltenen Strafen (WP) und der absolvierten Kampfzeit (in Minuten). Ein Judoka mit einem hohen Produktivitätswert erzeugt durchschnittlich viele hohe Wertungen, hingegen ist ein negativer Wert ein Indiz für passives Kampfverhalten. Der Datensatz beinhaltet die Produktivität von allen erfassten Wettkämpfen seit 2018.*
+
+-   Anhand der dargestellten Boxplots lässt sich die Homogenität der Gewichtsklassen ableiten. Die Gewichtsklassen -48kg bis-57kg weisen auf sehr homogene Daten bzw. auf ein leistungsstarkes Starterfeld hin. Hingegen sind die Gewichtsklassen -78kg und +78kg im Vergleich sehr heterogen.
+
+-   Die Produktivität der jeweiligen Gewinnerinnen (gelber Kreis) liegen deutlich über der Produktivität der Gewichtsklasse. Zudem unterscheiden sich die Produktivitätswerte zwischen leichten und schweren Gewichtsklassen.
+
+-   Die Top-8-Platzierten der IJF-Wettkämpfe (blaues Prisma) befinden sich, ausgenommen von -57kg und +78kg, deutlich über der durschnittlichen Produktivität. Demnach ist ein Produktivitätswert zwischen 1,3-2,4 für eine erfolgreiche Turniergestaltung notwendig (etwa 1 Waza-ari alle 3 Minuten).
+
+-   Anhand der dargestellten Boxplots lässt sich die Homogenität der Gewichtsklassen ableiten. Die leichten und mittleren Gewichtsklassen weisen auf eine hohe Homogenität hin, was auf ein leistungsstarkes Niveau der Gewichtsklassen hindeutet. Hingegen sind die schweren Gewichtsklasse -100kg und +100kg im Vergleich eher heterogen.
+
+-   Die Gewinner der IJF-Wettkämpfe (gelber Kreis) weisen vor allem in den leichten und mittleren Gewichtsklassen eine höhere Produktivität auf.
+
+-   Die Top-8-Platzierten der IJF-Wettkämpfe (blaues Prisma) entsprechen dem durchschnittlichen Produktivätswert eines Starterfeldes der vergangenen Wettbewerbe. Demnach ist ein Wert zwischen 1,5-2,3 für eine erfolgreiche Turniergestaltung notwendig (etwa 1 Waza-ari alle 4 Minuten).
+:::
+
+::: {.card title="Entwicklung der Produktivität"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot19")
+```
+
+```{r}
+#| context: server
+
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+
+data19 <- reactive({
+  df %>%
+    filter(WQ <= 15, WQ >= -15) %>% 
+    group_by(Datum, Gewichtsklasse, Disziplin, Zyklus,Event) %>%
+    summarise(PW = mean(WQ))
+})
+
+#Filtern basierend auf der ausgewählten Disziplin und dem Zyklus
+filteredData19 <- reactive({
+  if (is.null(input$select1) || length(input$select1) == 0) {
+    return(data19() %>% 
+             filter(Disziplin %in% input$checkGroup3 & 
+                    Zyklus %in% input$checkGroup4))
+  } else {
+    return(data19() %>% 
+             filter(Disziplin %in% input$checkGroup3 & 
+                    Zyklus %in% input$checkGroup4 & 
+                    Event %in% input$select1))
+  }
+})
+
+
+output$plot19 <- renderPlotly({
+  
+p <- 
+  filteredData19() %>%
+  ggplot(aes(x = Datum, y = PW, colour = Gewichtsklasse)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(alpha = 0.1) +
+  facet_wrap(vars(Disziplin), scales = "free") +
+  scale_y_continuous(breaks = seq(from = -5, to = 5, by = 0.25)) +
+  theme_classic(base_size = 16) +
+  labs(titel = "",
+       x = "Zeitraum",
+       y = "Ø Produktivität [WP/min]") +
+  scale_color_manual(values = IATcol)
+  
+ggplotly(p)
+
+})
+```
+:::
+
+::: {.card title="Produktivität von Nationen"}
+```{r}
+
+# Grafik ausgeben
+plotlyOutput("plot9")
+```
+
+```{r}
+#| context: server
+
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+
+data9 <- reactive({
+  df %>% 
+    group_by(Jahr, Nation) %>%
+    summarise(PW = mean(WQ))
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+# Filtern basierend auf der ausgewählten Disziplin und dem Zyklus
+filteredData9 <- reactive({
+  if (is.null(input$select1) || length(input$select1) == 0) {
+    return(data9() %>% 
+             filter(Disziplin %in% input$checkGroup3 & 
+                    Zyklus %in% input$checkGroup4))
+  } else {
+    return(data9() %>% 
+             filter(Disziplin %in% input$checkGroup3 & 
+                    Zyklus %in% input$checkGroup4 & 
+                    Event %in% input$select1))
+  }
+})
+
+# map projection/options
+
+output$plot9 <- renderLeaflet({
+  filtered_data <- filteredData9()
+  
+  leaflet(filtered_data) %>%
+    addTiles() %>%
+    addCircleMarkers(
+      lng = ~Longitude, lat = ~Latitude, # Stellen Sie sicher, dass Ihre Daten Längen- und Breitengrad enthalten
+      color = ~PW, # Verwenden Sie die entsprechende Spalte für die Farbe
+      radius = 5,
+      fillOpacity = 0.7
+    ) %>%
+    addLegend(
+      position = "bottomright",
+      pal = colorNumeric("viridis", domain = filtered_data$PW),
+      values = filtered_data$PW,
+      title = "PW"
+    )
+})
+
+```
+:::
+
+## Wettkampfzeit
+
+::: {.card title="Kampfzeit in Abhängigkeit der Vor- und Hauptrunde"}
+```{r}
+
+# Grafik ausgeben
+plotlyOutput("plot10")
+
+```
+
+```{r}
+#| context: server
+
+
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+data10 <- reactive({
+  df %>%
+    filter(Rang %in% "B") %>%
+    select(ID, Event, Kampfzeit_DEZ, Gewichtsklasse, Wettkampf, Turnierabschnitt, Disziplin, Zyklus) %>%
+    filter(!(Wettkampf %in% c("Grand Prix", "Continental Open")))
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData10 <- reactive({
+  if (is.null(input$select1) || length(input$select1) == 0) {
+    return(data10()[data10()$Disziplin %in% input$checkGroup3 & 
+                   data10()$Zyklus %in% input$checkGroup4, ])
+  } else {
+    return(data10()[data10()$Disziplin %in% input$checkGroup3 & 
+                   data10()$Zyklus %in% input$checkGroup4 &
+                   data10()$Event %in% input$select1, ])
+  }
+})
+
+output$plot10 <- renderPlotly({
+  p <- filteredData10() %>%
+    ggplot(aes(x = Gewichtsklasse, y = Kampfzeit_DEZ, fill = Turnierabschnitt)) +
+    geom_boxplot(position = position_dodge(1), width = 0.2, alpha = 0.4) +
+    scale_fill_manual(values = IATcol) +
+    coord_flip() +
+    theme_classic() +
+    facet_wrap(vars(Disziplin), scales = "free") +
+    labs(x = "Gewichtsklasse", y = "Kampfzeit [min]") +
+    scale_y_continuous(breaks = seq(0, max(filteredData10()$Kampfzeit_DEZ, na.rm = TRUE), by = 1))
+  
+  ggplotly(p) %>% layout(boxmode = "group")
+})
+
+```
+
+*Die Kampfzeit gibt die effektive Dauer eines Kampfes wieder. Damit lassen sich indirekt physiologische Anforderungen der Sportart ableiten (z.B. Belastungsdauer). In der Grafik werden die Verteilungen der einzelnen Kampfzeiten zwischen Vor- und Hauptrundenkämpfen zusammengefasst.*
+
+-   Die Kampfzeit der Hauptrundenkämpfe varriert von Jahr zu Jahr und ist gegenüber der Kampfzeit der Vorrundenkämpfe weniger konstant.
+
+-   Im Frauenbereich sind kaum Unterschiede zwischen den Jahren zu erkennen.
+
+-   Disziplinübergreifend sind die Hauptrundenkämpfe länger als die Vorrunden. Folglich nimmt die Wettkampfbelastung im Turnierverlauf zu.
+:::
+
+::: {.card title="Art des Sieges im Golden Score zwischen Vor- und Hauptrunde"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot11")
+```
+
+```{r}
+#| context: server
+
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+data11 <- reactive({
+df %>%
+    filter(Rang %in% "B" | is.na(Rang)) %>%
+    filter(!(Sieg_durch %in% c("Lose", "Fusen Gachi", "Kiken Gachi")) & !is.na(Sieg_durch)) %>%
+    filter(Kampfzeit_DEZ > 4)
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData11 <- reactive({
+  if (is.null(input$select1) || length(input$select1) == 0) {
+    return(data11()[data11()$Disziplin %in% input$checkGroup3 & 
+                   data11()$Zyklus %in% input$checkGroup4, ])
+  } else {
+    return(data11()[data11()$Disziplin %in% input$checkGroup3 & 
+                   data11()$Zyklus %in% input$checkGroup4 &
+                   data11()$Event %in% input$select1, ])
+  }
+})
+
+output$plot11 <- renderPlotly({
+
+
+p <- filteredData11() %>%
+ ggplot() +
+  aes(x = Sieg_durch, y = Kampfzeit_DEZ, fill = Disziplin) +
+  geom_boxplot() +
+  labs(x = " ", y = "Kampfzeit [min]") +
+  coord_flip() +
+  theme(legend.position = "top") +
+  facet_wrap(vars(Turnierabschnitt)) +
+  theme_classic(base_size = 16) +
+  scale_fill_jama()
+
+ggplotly(p) %>% layout(boxmode = "group")
+
+})
+```
+
+*Der Golden Score beschreibt die Kampfzeit nach den offiziellen 4 Minuten. Die in die Verlängerung gehenden Kämpfe werden dann durch eine der vier Siegarten (Wazari, Waza-ari-awasete-ippon, Ippon oder Hansoku-make) entschieden. In dem Datensatz befinden sich alle Wettbewerbe der IJF-Serie seit 2018 (ohne Kampfende mit Fusen Gachi bzw. Kiken Gachi).*
+
+-   Im Vergleich von Haupt- zu Vorrundenkämpfen sind vor allem die Entscheidungen durch Hansoku-make durch längere Kampfzeiten geprägt.
+
+-   Die Kampfentscheidungen durch die vier Siegarten werden zudem in der Hauptrunde größtenteils später getroffen. Dieses Bild spiegelt die längeren Kampfzeiten der Haupt- gegenüber den Vorrundenkämpfen wieder.
+
+-   Geschlechtsspezifische Unterschiede lassen sich in den Olympiazyklen nicht erkennen.
+:::
+
+::: {.card title="Kampfzeit bei Jahreshöhepunkten"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot12")
+```
+
+```{r}
+#| context: server
+
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+data12 <- reactive({
+df %>%
+    filter(Rang %in% "B" | is.na(Rang)) %>%
+    filter(!(Sieg_durch %in% c("Lose", "Fusen Gachi", "Kiken Gachi")) & !is.na(Sieg_durch))
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData12 <- reactive({
+  if (is.null(input$select1) || length(input$select1) == 0) {
+    return(data12()[data12()$Disziplin %in% input$checkGroup3 & 
+                   data12()$Zyklus %in% input$checkGroup4, ])
+  } else {
+    return(data12()[data12()$Disziplin %in% input$checkGroup3 & 
+                   data12()$Zyklus %in% input$checkGroup4 &
+                   data12()$Event %in% input$select1, ])
+  }
+})
+
+output$plot12 <- renderPlotly({
+
+p <- filteredData12() %>%  
+  ggplot(aes(x = as.factor(Wettkampf), y = Kampfzeit_DEZ, fill = Gewichtsklasse)) +
+  geom_abline(intercept = 4, slope = 0, alpha = 0.3, linetype = "longdash", color = "red") +   
+  geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+  scale_x_discrete(limits=c("EM", "Masters","WM", "OS")) +
+  scale_y_continuous(breaks = seq(from = 0, to = 15, by = 1)) +
+  labs(x = "Jahreshöhepunkte", y = "Kampfzeit [min]") +
+  theme_classic(base_size = 16) +
+  scale_fill_manual(values = IATcol)  
+
+ggplotly(p) %>% layout(boxmode = "group")
+})
+```
+
+*Die Kampfzeit gibt die effektive Dauer eines Kampfes wieder. Damit lassen sich indirekt physiologische Anforderungen der Sportart ableiten (z.B. Belastungsdauer). In der Grafik werden die Verteilungen der einzelnen Kampfzeiten zwischen den Jahreshöhepunkten seit 2018 im Männerbereich zusammengefasst und verglichen.*
+
+-   Über alle Turnierarten betrachtet, sind -60kg und -66kg im Vergleich zu den anderen Gewichtsklassen immer wieder längere Kampfzeiten zu beobachten.
+
+-   Das Turnier mit den längsten Kampfzeiten sind die Olympischen Spiele, dichtgefolgt von den Masters.
+
+-   Die längste effektive Kampfzeit im Männerbeich dauerte 14:11 Minuten.
+
+-   Über alle Turniere betrachtet, sind im Vergleich zu den anderen Gewichtsklassenvon -52kg, -57kg und -63kg durchschnittlich die längsten Kampfzeiten zu beobachten.
+
+-   Das Turnier mit der längsten Kampfzeit sind die Olympischen Spiele.
+
+-   Der Kampf mit der längsten effektiven Kampfzeit im Frauenbeich dauerte 16:37 Minuten
+:::
+
+::: {.card title="Kampfzeit bei IJF-World Tour"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot13")
+```
+
+```{r}
+#| context: server
+
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+data13 <- reactive({
+df %>%
+    filter(Rang %in% "B" | is.na(Rang)) %>%
+    filter(!(Sieg_durch %in% c("Lose", "Fusen Gachi", "Kiken Gachi")) & !is.na(Sieg_durch))
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData13 <- reactive({
+  if (is.null(input$select1) || length(input$select1) == 0) {
+    return(data13()[data13()$Disziplin %in% input$checkGroup3 & 
+                   data13()$Zyklus %in% input$checkGroup4, ])
+  } else {
+    return(data13()[data13()$Disziplin %in% input$checkGroup3 & 
+                   data13()$Zyklus %in% input$checkGroup4 &
+                   data13()$Event %in% input$select1, ])
+  }
+})
+
+output$plot13 <- renderPlotly({
+p <- filteredData13() %>%
+ ggplot(aes(x = fct_reorder(Event, Turnierart), y = Kampfzeit_DEZ, fill = Turnierart)) +
+ geom_boxplot() +
+ coord_flip() +
+ scale_fill_manual(values = IATcol) +
+ labs(, y= "Kampfzeit [min]") +
+ theme_classic()
+
+ggplotly(p)
+})
+```
+:::
+:::
+
+# Qualifikation
+
+## Row {.sidebar}
+
+```{r}
+  checkboxGroupInput("checkGroup5", 
+                     label = "Wähle die Disziplin(en)", 
+                     choices = list("Männer" = "Männer", "Frauen" = "Frauen"),
+                     selected = "Männer"
+    )
+  checkboxGroupInput("checkGroup6", 
+                     label = "Wähle den Olympiazyklus", 
+                     choices = unique(df_Event$Zyklus),
+                     selected = "2022-2024"
+    )
+  selectInput(inputId = "select2",
+              label = "Wähle ein Turnier",
+              choices = unique(df_Event$Turnier),
+              selected = "",
+              multiple = TRUE)
+```
+
+*Für Turniere der IJF-World-Tour werden Weltranglistenpunkte (WRP) mit unterschiedlicher Wertigkeit vergeben. Die Wertigkeit der WRP ist abhängig von der Turnierart und dessen vom IJF eingeschätzen Niveau (siehe Tabelle). Alle Turniere haben gemeinsam, dass eine hohe Turnierplatzierung mit einem hohem Punktwert verbunden ist.*
+
+![IJF-Punktetabelle](images/IJF_Turnierpunkte.PNG){fig-align="left" width="400"}
+
+## Row {orientation="columns" scrolling="true" width="60%"}
+
+::: panel-tabset
+## Weltranglistenpunkte
+
+::: {.card title="Durchschnittliche Weltranglistenpunkte (WR) in Abhängigkeit zur Turnierart"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot14")
+```
+
+```{r}
+#| context: server
+
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+data14 <- reactive({
+df_Event
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData14 <- reactive({
+  if (is.null(input$select2) || length(input$select2) == 0) {
+    return(data14()[data14()$Disziplin %in% input$checkGroup5 & 
+                   data14()$Zyklus %in% input$checkGroup6, ])
+  } else {
+    return(data14()[data14()$Disziplin %in% input$checkGroup5 & 
+                   data14()$Zyklus %in% input$checkGroup6 &
+                   data14()$Turnier %in% input$select2,])
+  }
+})
+
+output$plot14 <- renderPlotly({
+  
+p <- filteredData14() %>% 
+  ggplot(aes(x = Turnierart, y = Rel_Punkte, fill = Turnierart)) +
+  geom_boxplot(alpha = 0.6) +
+  geom_violin(alpha = 0.3) +
+  stat_summary(fun=mean,
+               geom="point",
+               colour = "black",
+               shape=22,
+               size=2) +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(from = 0, to = 600, by = 100),
+                     minor_breaks = seq(0, 600, 50),
+                     guide = guide_prism_minor()) +
+  labs(x = "", 
+       y = "Ø Weltranglistenpunkte (WRP)") +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 12L),
+        axis.title.y = element_text(size = 12L)) +
+  theme_classic(base_size = 12) +
+  scale_fill_manual(values = IATcol)
+
+ggplotly(p)
+
+})
+
+```
+
+*Aufgrund der unterschiedlichen Anzahl der teilnehmenden Judoka ist die Punktvergabe innerhalb der Turniere gleicher Kategorien ebenfalls unterschiedlich. Somit ist der durchschnittliche Punktwert eines Turniers von der Anzahl der Judoka und der WRP-Wertigkeit abhängig.*
+
+-   Der Medianwert der Boxplots gibt an, wie hoch der durchschnittliche Punktwert bei 50% der einbezogenen Turniere ist. Der Wert gibt Auskunft über den möglichen WR-Punktwert, den man erreichen kann, wenn man 50% der teilnehmenden Judoka innerhalb eines Turnierverlaufs hinter sich lässt.
+
+-   Das Masters ist das Turnier mit den meisten zu vergebenden WR-Punkten pro teilnehmenden Judoka.
+
+-   Im Vergleich der Medianwerte der Turnierarten scheint im Seniorenbereich der Aufwand für eine Teilnahme an Grand Prix (GP) und Open in einem geringeren Verhältnis zu den anderen Turnierarten zu stehen.
+:::
+
+::: {.card title="Durchschnittliche Weltranglistenpunkte bei den IJF-Events"}
+```{r}
+# Grafik ausgeben
+plotlyOutput("plot15")
+```
+
+```{r}
+#| context: server
+
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+data15 <- reactive({
+df_Event %>% 
+    arrange(Turnierart) %>% 
+    mutate(Turnier = factor(Turnier, levels = unique(Turnier)))
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData15 <- reactive({ 
+  data <- data15() 
+  if (!is.null(input$checkGroup5) && length(input$checkGroup5) > 0) { 
+    data <- data[data$Disziplin %in% input$checkGroup5, ] 
+    } 
+  if (!is.null(input$checkGroup6) && length(input$checkGroup6) > 0) { 
+    data <- data[data$Zyklus %in% input$checkGroup6, ] 
+    } 
+  if (!is.null(input$select2) && length(input$select2) > 0) { 
+    data <- data[data$Turnier %in% input$select2, ] 
+    } 
+    return(data)
+           
+  })
+
+
+output$plot15 <- renderPlotly({
+
+
+p <- filteredData15() %>% 
+  ggplot(aes(x = Turnier, y = Rel_Punkte , fill = Turnierart)) +
+  geom_boxplot(alpha = 0.6) +
+  geom_violin(alpha = 0.3) +
+  geom_abline(intercept = 50, slope = 0, alpha = 0.3, linetype = "longdash") +
+  geom_abline(intercept = 150, slope = 0, alpha = 0.3, linetype = "longdash") +
+  geom_abline(intercept = 250, slope = 0, alpha = 0.3, linetype = "longdash", color = "red") +
+  geom_abline(intercept = 350, slope = 0, alpha = 0.3, linetype = "longdash") +
+  geom_abline(intercept = 450, slope = 0, alpha = 0.3, linetype = "longdash") +
+  geom_abline(intercept = 550, slope = 0, alpha = 0.3, linetype = "longdash") +
+  stat_summary(fun = mean,
+               geom = "point",
+               colour = "black",
+               shape=22,
+               size=2) +
+  coord_flip() +
+  scale_y_continuous(breaks = seq(from = 0, to = 600, by = 50),
+                     minor_breaks = seq(0, 600, 50),
+                     guide = guide_prism_minor()) +
+  labs(x = "", 
+       y = "Ø Weltranglistenpunkte (WRP)") +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 12L),
+        axis.title.y = element_text(size = 12L),
+        plot.margin = unit(c(1, 1, 2, 1), "cm")) +
+  theme_classic(base_size = 12) +
+  scale_fill_manual(values = IATcol)
+
+ggplotly(p) %>% 
+  layout(width = 1000, height = 1200)
+
+})
+```
+
+*In der Grafik sind die durchschnittlichen WRL-Punkte für jedes Turnier der IJF-Tour im OS-Qualifikationszeitraum dargestellt. Anhand dieser Darstellung lassen sich einzelne Turniere und deren potentiellen WRL-Punkte vergleichen.*
+
+-   Wie auch schon bei der der Nationenbreite zu sehen, nehmen im Männerbereich mehr Judoka teil. Dadurch verringern sich die durchschnittlichen WRP pro Turnier im Vergleich zum Frauenbereich.
+
+-   Die Teilnahme an den Turnieren mit einem hohen Median ermöglichen im Zyklus eine effizientere Qualifikation. Dadurch können punktbringende Wettkämpfe in der Jahresplanung berücksichtigt werden.
+
+-   Die OS-Analyse 2021 zeigte, dass für eine erfolgreiche Qualifikation zu den Olympischen Spielen pro Turnier ein durchschnittlicher Wert von mindestens 250 WRP erzielt werden muss. Eine Platzierung im Bereich des Medians reicht demnach im Männerbereich nicht aus. Hier sind Platzierungen im Bereich 5-7 notwendig.
+:::
+
+## Turnieranzahl
+
+::: {.card title="Anzahl der Turniere"}
+```{r}
+# UI
+tags$style(HTML("
+      .sund2b-container {
+        background-color: white;
+      }
+    "))  
+sund2bOutput("s2b1", width = "100%", height = "1000px")
+textOutput("text")
+
+```
+
+```{r}
+#| context: server
+
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+data16 <- reactive({
+
+  df_Turnieranzahl <- df %>% 
+    select(ID, Name, Event, Nation, Gewichtsklasse, Zyklus, Disziplin, Tage_OS) %>%
+    filter(Tage_OS >=1 & Tage_OS <= 712) %>%
+    select(Name, Event, Gewichtsklasse, Nation, Zyklus, Disziplin) %>%
+    group_by(Name, Gewichtsklasse, Nation, Zyklus, Disziplin) %>%
+    summarise(size = n_distinct(Event))
+
+  return(df_Turnieranzahl)
+})
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+filteredData16 <- reactive({
+  return(data16()[data16()$Disziplin %in% input$checkGroup5 & 
+                  data16()$Zyklus %in% input$checkGroup6,])
+})
+
+df_Sund2b <- reactive({
+  data.frame(level1 = filteredData16()$Gewichtsklasse,
+             level2 = filteredData16()$Nation,
+             level3 = filteredData16()$Name,
+             size = filteredData16()$size,
+             stringsAsFactors = FALSE)
+})
+
+# Server
+output$s2b1 <- renderSund2b({
+  sund2b(d3_nest(df_Sund2b(), value_cols = "size", root = "Anzahl der teilgenommenen Turniere"),
+         valueField = "size",
+         tooltip = list(at = "center left", my = "top"),
+         breadcrumbs = list(orient = "left"),
+         showLabels = TRUE) %>% 
+    htmlwidgets::onRender("
+        function(el, x) {
+          el.classList.add('sund2b-container');
+        }
+      ")
+})
+
+
+
+selection1 <- reactive({
+  input$s2b1_click
+})
+
+output$text <- renderText({
+  selection1()
+})
+
+```
+:::
+:::
+
+# Team D
+
+## Row {.sidebar}
+
+```{r}
+
+dateRangeInput(inputId = "date_range",
+               label = h4("Bitte Zeitraum wählen:"), 
+               start = as.Date("2023-01-01"), 
+               end = as.Date(Sys.Date()), 
+               format = "mm-yyyy", 
+               language = "de")
+
+selectInput("Kategorie",
+            label = "Wählen Sie eine Kategorie:",
+            choices = unique(df_TeamD$Gewichtsklasse),
+            selected = "",
+            multiple = TRUE)
+```
+
+## Row
+
+::: panel-tabset
+## Entwicklung & Potential
+
+::: {.card title="Durschnittliche Punkteentwicklung"}
+```{r}
+# Grafik ausgeben
+plotlyOutput('plot17')
+```
+
+```{r}
+#| context: server
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+
+filteredData17 <- reactive({
+    filter(df_TeamD, 
+           Datum >= input$date_range[1] & Datum <= input$date_range[2],
+           Gewichtsklasse == input$Kategorie)
+  })
+
+
+# Grafik als Plotly erstellen
+output$plot17 <- renderPlotly({
+
+p <- filteredData17() %>%
+  ggplot(aes(x = Datum, y = KPI, colour = Vollname)) +
+  geom_point() +
+  geom_line(linetype = 5) +
+  labs(title = "Entwicklung in der Qualifikationsphase",
+       x = "Zeitraum der Qualifikation",
+       y = "Durschnittliche WRP [Punkte pro Turnier]") +
+  geom_abline(intercept = 200, 
+              slope = 0, 
+              alpha = 0.3, 
+              linetype = "longdash", 
+              color = "red") +
+    geom_abline(intercept = 250, 
+              slope = 0, 
+              alpha = 0.3, 
+              linetype = "longdash", 
+              color = "#2bb2e2") +
+  theme_classic(base_size = 12) +
+  scale_color_manual(values = IATcol)
+
+    ggplotly(p)
+})
+```
+:::
+
+## Team D in der Welt
+
+::: {.card title="Position und Turnieranzahl"}
+```{r}
+# Grafik ausgeben
+plotlyOutput('plot18')
+
+```
+
+```{r}
+#| context: server
+
+# Erstellen Sie einen reaktiven Ausdruck für die gefilterten Daten
+
+data18 <- reactive({
+
+df_data18 <- ORL_22_24 %>%
+  select(Vollname, Nation, Gewichtsklasse, Rang, ORL_Punkte, OS_Teilnahme, Zyklus)
+
+  df_Turnieranzahl <- df %>% 
+    select(ID, Vollname, Event, Nation, Gewichtsklasse, Tage_OS) %>%
+    filter(Tage_OS >=1 & Tage_OS <= 712) %>%
+    select(Vollname, Event, Gewichtsklasse, Nation) %>%
+    group_by(Vollname, Gewichtsklasse, Nation) %>%
+    summarise(size = n_distinct(Event))
+  
+df_data18 <- df_data18  %>%
+  select(Vollname, Nation, Gewichtsklasse, Rang, ORL_Punkte, OS_Teilnahme, Zyklus) %>% 
+  left_join(df_Turnieranzahl, by = c("Vollname", "Nation", "Gewichtsklasse")) %>% 
+  mutate(rel_Punkte = ORL_Punkte/size)
+  
+})
+
+filteredData18 <- reactive({
+    filter(data18(),Gewichtsklasse == input$Kategorie)
+  })
+
+# Grafik als Plotly erstellen
+output$plot18 <- renderPlotly({
+  
+p <- filteredData18() %>%
+  ggplot(aes(x= Rang , y= size, color= OS_Teilnahme)) +
+  geom_point(alpha = 0.5, size=3) +
+  facet_wrap(vars(Gewichtsklasse)) +
+  labs(
+    x="Rang in der Olympiarangliste",
+    y="Anzahl der Wettkämpfe im OZ [n]",
+    ) +
+  theme_classic(base_size = 12) +
+  scale_color_manual(values = IATcol)
+
+    ggplotly(p)
+})
+
+```
+:::
+
+::: {.card title="Position und Turnieranzahl"}
+```         
+```
+
+```         
+```
+
+```         
+```
+:::
+
+```         
+```
+
+## Athletinnenprofile
+
+::: {.card title="Position und Turnieranzahl"}
+```         
+```
+:::
+:::
+
+```{r}
+# Filterung der Daten & Vorbereitung für Kartenmaterial
+data15 <- 
+df_Event %>%
+    filter(Turnierart != "Continental Open",Turnierart != "Olympische Spiele", Zyklus == "2022-2024") %>% 
+    arrange(Turnierart) %>%  
+    mutate(Turnierart = factor(Turnierart, levels = c("Grand Prix", "Grand Slam", "Kontinentale Meisterschaften", "Masters", "Weltmeisterschaften")))
+
+p <- data15 %>%
+  ggplot(aes(x = Rel_Punkte, y = Turnier, fill = Turnierart)) +
+  geom_boxplot(alpha = 0.6) +
+  geom_violin(alpha = 0.3) +
+  geom_vline(xintercept = 50, alpha = 0.3, linetype = "longdash") +
+  geom_vline(xintercept = 150, alpha = 0.3, linetype = "longdash") +
+  geom_vline(xintercept = 210, linetype = "longdash", color = "red") +
+  geom_vline(xintercept = 230, linetype = "longdash", color = "red") +
+  geom_vline(xintercept = 250, alpha = 0.3, linetype = "longdash") +
+  geom_vline(xintercept = 350, alpha = 0.3, linetype = "longdash") +
+  geom_vline(xintercept = 450, alpha = 0.3, linetype = "longdash") +
+  geom_vline(xintercept = 550, alpha = 0.3, linetype = "longdash") +
+  stat_summary(fun = mean, geom = "point", colour = "black", shape = 22, size = 2) +
+  scale_x_continuous(breaks = seq(from = 0, to = 600, by = 50), minor_breaks = seq(0, 600, 50)) +
+  scale_y_discrete(limits = c("Grand Prix Almada", "Grand Prix Dushanbe", "Grand Prix Linz", "Grand Prix Odivelas", "Grand Prix Zagreb", "Grand Slam Abu Dhabi", "Grand Slam Antalya", "Grand Slam Astana", "Grand Slam Baku", "Grand Slam Budapest","Grand Slam Dushanbe", "Grand Slam Paris", "Grand Slam Tashkent", "Grand Slam Tbilisi", "Grand Slam Tel Aviv", "Grand Slam Tokyo", "Grand Slam Ulaanbaatar", "African Championships Cairo", "African Championships Casablanca", "Asian Championships Hong Kong", "Asian Games Hangzhou", "EM Budapest","EM Zagreb","EM Montpellier","Panamerican Games Santiago","Panamerican- Oceania Championships Calgary","Panamerican- Oceania Championships Rio de Janeiro","Masters Budapest","Masters Jerusalem","WM Abu Dhabi","WM Doha","WM Tashkent")) +
+  labs(x = "Ø Weltranglistenpunkte", y = "") +
+  theme(legend.position = "none",
+        axis.title.x = element_text(size = 14L),
+        plot.margin = unit(c(1, 1, 2, 1), "cm")) +
+  theme_classic(base_size = 16) +
+  scale_fill_manual(values = IATcol)
+
+p
+```
